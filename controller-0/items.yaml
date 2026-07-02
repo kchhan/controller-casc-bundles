@@ -1,0 +1,170 @@
+removeStrategy:
+  rbac: SYNC
+  items: NONE
+items:
+- kind: folder
+  name: performance-lab
+  description: ''
+  displayName: performance-lab
+  items:
+  - kind: pipeline
+    name: lab-agent-work
+    concurrentBuild: false
+    definition:
+      cpsFlowDefinition:
+        sandbox: true
+        script: |
+          pipeline {
+            agent { label params.AGENT_LABEL }
+            options { timestamps(); disableConcurrentBuilds(abortPrevious: false) }
+            parameters {
+              string(name: 'AGENT_LABEL', defaultValue: 'lab-agent', description: 'Approved lab agent label')
+              string(name: 'ITERATIONS', defaultValue: '10000', description: 'Small bounded loop')
+            }
+            stages {
+              stage('Agent-Side Loop') {
+                steps {
+                 sh '''
+                    i=0
+                    while [ "$i" -lt "^${ITERATIONS}" ]; do
+                      i=$((i+1))
+                    done
+                    echo "Completed ^${ITERATIONS} iterations on agent ^${NODE_NAME}"
+                  '''
+                }
+              }
+            }
+          }
+    description: ''
+    disabled: false
+    displayName: lab-agent-work
+    properties:
+    - parameters:
+        parameterDefinitions:
+        - string:
+            trim: false
+            defaultValue: lab-agent
+            name: AGENT_LABEL
+            description: Approved lab agent label
+        - string:
+            trim: false
+            defaultValue: '10000'
+            name: ITERATIONS
+            description: Small bounded loop
+    resumeBlocked: false
+  - kind: pipeline
+    name: lab-controller-groovy-large
+    concurrentBuild: true
+    definition:
+      cpsFlowDefinition:
+        sandbox: true
+        script: "pipeline {\n  agent none \n  \n  options {\n    timestamps()\n  \
+          \  timeout(time: 30, unit: 'MINUTES') \n  }\n  \n  parameters {\n    //\
+          \ Changed to string parameters\n    string(name: 'PARALLEL_BRANCHES', defaultValue:\
+          \ '10', description: 'Number of parallel branches (Thread Stress)')\n  \
+          \  string(name: 'ITERATIONS', defaultValue: '50000', description: 'List\
+          \ size per branch (Heap/Serialization Stress)')\n  }\n  \n  stages {\n \
+          \   stage('Synthetic Pipeline Storm') {\n      steps {\n        script {\n\
+          \          // Cast the string parameters to integers so we can loop over\
+          \ them\n          int branchCount = params.PARALLEL_BRANCHES as Integer\n\
+          \          int iterationCount = params.ITERATIONS as Integer\n         \
+          \   \n          echo \"WARNING: Initiating heavy load test with ^${branchCount}\
+          \ branches and ^${iterationCount} iterations.\"\n          \n          def\
+          \ branches = [:]\n          \n          // Generate the branches dynamically\
+          \ using the casted integer\n          for (int i = 1; i <= branchCount;\
+          \ i++) {\n            def branchName = \"Stress-Thread-^${i}\"\n       \
+          \     \n            branches[branchName] = {\n              node('lab-agent')\
+          \ { \n                \n                def massiveList = []\n         \
+          \       \n                // Use the casted iteration limit\n          \
+          \      for (int j = 1; j <= iterationCount; j++) {\n                  massiveList.add(\"\
+          HEAVY_PAYLOAD_SERIALIZATION_STRING_FOR_ITEM_NUMBER_^${j}_IN_BRANCH_^${branchName}\"\
+          )\n                  \n                  if (j % 5000 == 0) {\n        \
+          \              echo \"[^${branchName}] Serialization progress: ^${j} objects\
+          \ stored in memory...\"\n                  }\n                }\n      \
+          \          \n                echo \"[^${branchName}] Reached max iterations.\
+          \ Holding thread open...\"\n                \n                sleep(time:\
+          \ 15, unit: 'SECONDS')\n                massiveList = null \n          \
+          \    }\n            }\n          }\n          \n          parallel branches\n\
+          \        }\n      }\n    }\n  }\n}"
+    description: ''
+    disabled: false
+    displayName: lab-controller-groovy-large
+    properties:
+    - parameters:
+        parameterDefinitions:
+        - string:
+            trim: false
+            defaultValue: '10'
+            name: PARALLEL_BRANCHES
+            description: Number of parallel branches (Thread Stress)
+        - string:
+            trim: false
+            defaultValue: '50000'
+            name: ITERATIONS
+            description: List size per branch (Heap/Serialization Stress)
+    resumeBlocked: false
+  - kind: pipeline
+    name: lab-controller-groovy-small
+    concurrentBuild: true
+    definition:
+      cpsFlowDefinition:
+        sandbox: true
+        script: |
+          pipeline {
+            agent { label params.AGENT_LABEL }
+            options { timestamps(); disableConcurrentBuilds(abortPrevious: false) }
+            parameters {
+              string(name: 'AGENT_LABEL', defaultValue: 'lab-agent', description: 'Approved lab agent label')
+              string(name: 'ITEMS', defaultValue: '5000', description: 'Small bounded list size')
+            }
+            // Remaining stages intentionally bounded; do not increase ITEMS without approval.
+          }
+    description: ''
+    disabled: false
+    displayName: lab-controller-groovy-small
+    resumeBlocked: false
+  - kind: pipeline
+    name: lab-sleep
+    concurrentBuild: false
+    definition:
+      cpsFlowDefinition:
+        sandbox: true
+        script: "pipeline {\n  agent { \n      label params.AGENT_LABEL \n  }\n  options\
+          \ { \n      timestamps(); \n      disableConcurrentBuilds(abortPrevious:\
+          \ false) \n  }\n  parameters {\n    string(name: 'AGENT_LABEL', defaultValue:\
+          \ 'lab-agent', description: 'Approved lab agent label')\n    string(name:\
+          \ 'SLEEP_SECONDS', defaultValue: '120', description: 'Bounded sleep duration')\n\
+          \    string(name: 'ITERATION', defaultValue: \"1\", description: 'Iteration\
+          \ of build loop')\n  }\n  stages {\n    stage('Confirm Target') {\n    \
+          \  steps {\n        echo \"Running on ^${env.NODE_NAME} with label ^${params.AGENT_LABEL}\"\
+          \n        echo \"Triggering build ^${params.ITERATION}\"\n      }\n    }\n\
+          \    stage('Bounded Agent Work') {\n      steps {\n        sh '''\n    \
+          \      echo \"Start: $(date -u)\"\n          sleep \"^${SLEEP_SECONDS}\"\
+          \n          echo \"End: $(date -u)\"\n        '''\n      }\n    }\n  }\n\
+          }\n"
+    description: ''
+    disabled: false
+    displayName: lab-sleep
+    properties:
+    - parameters:
+        parameterDefinitions:
+        - string:
+            trim: false
+            defaultValue: lab-agent
+            name: AGENT_LABEL
+            description: Approved lab agent label
+        - string:
+            trim: false
+            defaultValue: '120'
+            name: SLEEP_SECONDS
+            description: Bounded sleep duration
+        - string:
+            trim: false
+            defaultValue: '1'
+            name: ITERATION
+            description: Iteration of build loop
+    resumeBlocked: false
+  properties:
+  - envVars: {}
+  - itemRestrictions:
+      filter: false
